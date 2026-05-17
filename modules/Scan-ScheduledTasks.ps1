@@ -14,8 +14,8 @@ function Scan-ScheduledTasks {
     # --- 2A: Visible Task Enumeration ---
     Write-Host "  [2A] Enumerating scheduled tasks..." -ForegroundColor Cyan
 
-    $suspiciousTaskPatterns = @("(?i)update.*ledger", "(?i)node.*sync", "(?i)sync.*node", "(?i)zombi", "(?i)wallet.*update")
-    $suspiciousActions = @("node.exe", "powershell.*-enc", "powershell.*-e ", "wscript", "cscript", "mshta")
+    $suspiciousTaskPatterns = @("(?i)update.*ledger", "(?i)update.*app", "(?i)node.*sync", "(?i)sync.*node", "(?i)zombi", "(?i)wallet.*update", "(?i)system.*sync", "(?i)chrome.*updat")
+    $suspiciousActions = @("node.exe", "powershell.*-enc", "powershell.*-e ", "powershell.*-[wW]indowStyle.*[hH]idden", "wscript", "cscript", "mshta", "AghzgY", "QtCvyfVWKH")
     $userWritablePaths = @("\\AppData\\", "\\Temp\\", "\\Downloads\\")
 
     try {

@@ -183,5 +183,103 @@ function Scan-Registry {
         Reason   = "No browser shortcut manipulation found"
     }
 
+    # --- 1D: GlassWorm Filesystem IOCs (jucku, staging directories, persistence scripts) ---
+    Write-Host "  [1D] Scanning for GlassWorm filesystem IOCs..." -ForegroundColor Cyan
+
+    $fsIOCs = $regData.glassworm_filesystem_iocs
+
+    # Check for jucku directory (primary GlassWorm Chrome extension staging)
+    $juckuPaths = @(
+        "$env:LOCALAPPDATA\Google\Chrome\jucku",
+        "$env:LOCALAPPDATA\Google\Chrome\User Data\jucku",
+        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\jucku"
+    )
+    foreach ($jp in $juckuPaths) {
+        if (Test-Path $jp) {
+            $fileCount = (Get-ChildItem $jp -Recurse -ErrorAction SilentlyContinue).Count
+            $findings += [PSCustomObject]@{
+                Phase    = "1D-FilesystemIOC"
+                Severity = "CRITICAL"
+                Item     = "JUCKU DIRECTORY FOUND"
+                Detail   = "Path: $jp | Files: $fileCount | This is the GlassWorm fake Chrome extension staging directory"
+                Reason   = "GLASSWORM CONFIRMED: jucku directory is a primary indicator of active GlassWorm infection"
+            }
+        }
+    }
+
+    # Check for staging directories
+    $stagingDirs = @(
+        "$env:LOCALAPPDATA\QtCvyfVWKH"
+    )
+    foreach ($sd in $stagingDirs) {
+        if (Test-Path $sd) {
+            $files = Get-ChildItem $sd -Recurse -ErrorAction SilentlyContinue
+            $fileList = ($files | Select-Object -First 5 -ExpandProperty Name) -join ", "
+            $findings += [PSCustomObject]@{
+                Phase    = "1D-FilesystemIOC"
+                Severity = "CRITICAL"
+                Item     = "GLASSWORM STAGING DIRECTORY"
+                Detail   = "Path: $sd | Files: $($files.Count) | Contents: $fileList"
+                Reason   = "GLASSWORM CONFIRMED: QtCvyfVWKH is a known GlassWorm malware staging directory"
+            }
+        }
+    }
+
+    # Check for AghzgY.ps1 persistence script anywhere in AppData
+    Write-Host "  [1D] Scanning for persistence scripts..." -ForegroundColor Cyan
+    $persistScripts = @("AghzgY.ps1")
+    foreach ($ps in $persistScripts) {
+        $found = Get-ChildItem "$env:LOCALAPPDATA" -Filter $ps -Recurse -ErrorAction SilentlyContinue
+        if ($found) {
+            foreach ($f in $found) {
+                $findings += [PSCustomObject]@{
+                    Phase    = "1D-FilesystemIOC"
+                    Severity = "CRITICAL"
+                    Item     = "GLASSWORM PERSISTENCE SCRIPT: $ps"
+                    Detail   = "Path: $($f.FullName) | Size: $($f.Length) bytes | Modified: $($f.LastWriteTime)"
+                    Reason   = "GLASSWORM CONFIRMED: AghzgY.ps1 is the GlassWorm Stage 3 persistence launcher"
+                }
+            }
+        }
+    }
+
+    # Check for fake Google Docs Offline with known-bad version
+    $chromeExtDir = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions"
+    if (Test-Path $chromeExtDir) {
+        $docsOfflineId = "ghbmnnjooekpmoecnnnilnnbdlolhkhi"
+        $docsExtDir = Join-Path $chromeExtDir $docsOfflineId
+        if (Test-Path $docsExtDir) {
+            Get-ChildItem $docsExtDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                $manifestPath = Join-Path $_.FullName "manifest.json"
+                if (Test-Path $manifestPath) {
+                    try {
+                        $m = Get-Content $manifestPath -Raw | ConvertFrom-Json
+                        if ($m.version -eq "1.95.1") {
+                            $findings += [PSCustomObject]@{
+                                Phase    = "1D-FilesystemIOC"
+                                Severity = "CRITICAL"
+                                Item     = "FAKE GOOGLE DOCS OFFLINE v1.95.1"
+                                Detail   = "Extension ID: $docsOfflineId | Version: 1.95.1 | This is a known GlassWorm trojanized version"
+                                Reason   = "GLASSWORM CONFIRMED: Google Docs Offline v1.95.1 is a known-compromised version deployed by GlassWorm"
+                            }
+                        }
+                    } catch { }
+                }
+            }
+        }
+    }
+
+    # Report clean if no filesystem IOCs found
+    $fsFindings = $findings | Where-Object { $_.Phase -eq "1D-FilesystemIOC" }
+    if (-not $fsFindings -or $fsFindings.Count -eq 0) {
+        $findings += [PSCustomObject]@{
+            Phase    = "1D-FilesystemIOC"
+            Severity = "INFO"
+            Item     = "GlassWorm Filesystem IOCs"
+            Detail   = "Checked jucku directory, QtCvyfVWKH staging, AghzgY.ps1 script, Docs Offline v1.95.1 - none found"
+            Reason   = "No GlassWorm filesystem artifacts detected"
+        }
+    }
+
     return $findings
 }

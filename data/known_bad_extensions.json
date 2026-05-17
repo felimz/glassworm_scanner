@@ -17,5 +17,23 @@
   ],
   "chrome_legitimate": {
     "google_docs_offline": "ghbmnnjooekpmoecnnnilnnbdlolhkhi"
+  },
+  "chrome_glassworm_iocs": {
+    "fake_docs_offline_versions": ["1.95.1"],
+    "jucku_extension_indicators": {
+      "directory_name": "jucku",
+      "macos_directory": "myextension",
+      "fake_extension_name": "Google Docs Offline",
+      "capabilities": [
+        "cookie_theft",
+        "session_hijacking",
+        "keylogging",
+        "screenshot_capture",
+        "dom_exfiltration",
+        "clipboard_monitoring",
+        "crypto_wallet_detection",
+        "forced_tab_redirect"
+      ]
+    }
   }
 }

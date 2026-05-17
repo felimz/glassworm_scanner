@@ -1,6 +1,10 @@
 {
   "known_bad_value_names": [
-    "UpdateLedger"
+    "UpdateLedger",
+    "UpdateApp",
+    "UpdateService",
+    "SystemSync",
+    "ChromeUpdater"
   ],
   "suspicious_patterns": [
     "(?i)ledger",
@@ -8,28 +12,50 @@
     "(?i)wallet.*update",
     "(?i)sync.*node",
     "(?i)node.*sync",
-    "(?i)zombi"
+    "(?i)zombi",
+    "(?i)update.*app",
+    "(?i)chrome.*updat",
+    "(?i)system.*sync"
   ],
   "suspicious_path_patterns": [
     "\\\\AppData\\\\.*\\.exe$",
     "\\\\Temp\\\\.*\\.exe$",
     "powershell.*-[eE]nc",
     "powershell.*-[eE] ",
+    "powershell.*-[wW]indowStyle.*[hH]idden",
     "node\\.exe.*--eval",
     "rundll32.*AppData",
     "wscript.*AppData",
     "cscript.*AppData",
-    "mshta.*http"
+    "mshta.*http",
+    "AghzgY\\.ps1",
+    "QtCvyfVWKH"
   ],
   "known_good_value_names": [
     "OneDrive",
     "Discord",
     "SecurityHealth",
     "Logitech Download Assistant",
-    "MicrosoftCopilotAutoLaunch_8211D4449EF84E79B304C885E1579CD9",
     "Steam",
     "Spotify",
     "GoogleDriveFS",
-    "iTunesHelper"
-  ]
+    "iTunesHelper",
+    "ExpressVPN"
+  ],
+  "glassworm_filesystem_iocs": {
+    "jucku_directory": {
+      "windows": "%LOCALAPPDATA%\\Google\\Chrome\\jucku",
+      "macos": "/Library/Application Support/Google/Chrome/myextension",
+      "severity": "CRITICAL",
+      "note": "GlassWorm force-installed fake Chrome extension staging directory"
+    },
+    "staging_directories": [
+      "%LOCALAPPDATA%\\QtCvyfVWKH",
+      "%LOCALAPPDATA%\\Google\\Chrome\\jucku"
+    ],
+    "persistence_scripts": [
+      "AghzgY.ps1"
+    ],
+    "fake_docs_offline_version": "1.95.1"
+  }
 }

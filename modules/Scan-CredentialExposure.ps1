@@ -6,7 +6,7 @@ function Scan-CredentialExposure {
     [CmdletBinding()]
     param()
 
-    $findings = @()
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
 
     # --- 8A: Sensitive File Check ---
     Write-Host "  [8A] Checking credential file exposure..." -ForegroundColor Cyan
@@ -39,11 +39,11 @@ function Scan-CredentialExposure {
                 $reason = "Credential file modified in last 7 days — verify no unauthorized access"
             }
 
-            $findings += [PSCustomObject]@{
+            $findings.Add([PSCustomObject]@{
                 Phase="8A-CredFiles"; Severity=$severity
                 Item=$cf.Name; Detail="Path: $($cf.Path) | Last Modified: $modTime ($daysSinceModified days ago)"
                 Reason=$reason
-            }
+            }) | Out-Null
         }
     }
 
@@ -59,11 +59,11 @@ function Scan-CredentialExposure {
         $val = [Environment]::GetEnvironmentVariable($sv)
         if ($val) {
             $masked = $val.Substring(0, [Math]::Min(4, $val.Length)) + "****"
-            $findings += [PSCustomObject]@{
+            $findings.Add([PSCustomObject]@{
                 Phase="8B-EnvVars"; Severity="MEDIUM"
                 Item=$sv; Detail="Value present (masked): $masked"
                 Reason="Sensitive token in environment — GlassWorm harvests these"
-            }
+            }) | Out-Null
         }
     }
 
@@ -74,11 +74,11 @@ function Scan-CredentialExposure {
     foreach ($wp in $walletProcesses) {
         $match = $runningProcs | Where-Object { $_.ProcessName -match $wp -or $_.MainWindowTitle -match $wp }
         if ($match) {
-            $findings += [PSCustomObject]@{
+            $findings.Add([PSCustomObject]@{
                 Phase="8C-CryptoWallets"; Severity="INFO"
                 Item=$wp; Detail="Running process: $($match.ProcessName)"
                 Reason="Crypto wallet software running — GlassWorm targets 49+ wallet types"
-            }
+            }) | Out-Null
         }
     }
 

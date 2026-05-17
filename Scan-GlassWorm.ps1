@@ -31,6 +31,8 @@
 .LINK
     https://github.com/felimz/glassworm_scanner
 #>
+#Requires -Version 5.1
+
 [CmdletBinding()]
 param(
     [switch]$SkipUnicode,
@@ -41,6 +43,10 @@ param(
 
 $ErrorActionPreference = "Continue"
 $scriptRoot = $PSScriptRoot
+if (-not $scriptRoot) {
+    Write-Error "This script must be run as a file, not pasted into a console. Use: pwsh -File .\Scan-GlassWorm.ps1"
+    exit 1
+}
 $dataDir    = Join-Path $scriptRoot "data"
 $modulesDir = Join-Path $scriptRoot "modules"
 $reportsDir = Join-Path $scriptRoot "reports"
@@ -55,6 +61,11 @@ try {
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 } catch { }
+
+# --- Version Check ---
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Warning "GlassWorm Scanner is designed for PowerShell 7+. Some phases may produce inaccurate results on Windows PowerShell 5.1."
+}
 
 # --- Banner ---
 Write-Host ""
@@ -193,20 +204,22 @@ if ($critical.Count + $high.Count + $medium.Count -gt 0) {
     }
 }
 
+# --- Shared report timestamp ---
+$reportTimestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
 # --- HTML Report ---
 if ($HTMLReport) {
-    $timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
-    $reportPath = Join-Path $reportsDir "glassworm_scan_$timestamp.html"
+    $reportPath = Join-Path $reportsDir "glassworm_scan_$reportTimestamp.html"
 
     # Escape HTML in cell content
-    function Escape-Html { param([string]$s) return $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;') }
+    function ConvertTo-EscapedHtml { param([string]$s) return $s.Replace('&','&amp;').Replace('<','&lt;').Replace('>','&gt;') }
 
     $rows = $allFindings | ForEach-Object {
         $bgColor = switch ($_.Severity) {
             "CRITICAL" { "#ff4444" } "HIGH" { "#ff8800" } "MEDIUM" { "#ffcc00" } default { "#333" }
         }
         $textColor = if ($_.Severity -in @("MEDIUM")) { "#000" } else { "#fff" }
-        "<tr style='background:$bgColor;color:$textColor'><td>$(Escape-Html $_.Severity)</td><td>$(Escape-Html $_.Phase)</td><td>$(Escape-Html $_.Item)</td><td>$(Escape-Html $_.Detail)</td><td>$(Escape-Html $_.Reason)</td></tr>"
+        "<tr style='background:$bgColor;color:$textColor'><td>$(ConvertTo-EscapedHtml $_.Severity)</td><td>$(ConvertTo-EscapedHtml $_.Phase)</td><td>$(ConvertTo-EscapedHtml $_.Item)</td><td>$(ConvertTo-EscapedHtml $_.Detail)</td><td>$(ConvertTo-EscapedHtml $_.Reason)</td></tr>"
     }
 
     $adminNote = if ($isAdmin) { "Yes (full scan)" } else { "No (limited - run as Admin for full scan)" }
@@ -243,11 +256,13 @@ $($rows -join "`n")
 }
 
 # --- CSV Export (always) ---
-$csvPath = Join-Path $reportsDir "glassworm_scan_$(Get-Date -Format 'yyyy-MM-dd_HHmmss').csv"
+$csvPath = Join-Path $reportsDir "glassworm_scan_$reportTimestamp.csv"
 if ($allFindings.Count -gt 0) {
     $allFindings | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+    Write-Host "  CSV Export: $csvPath" -ForegroundColor Cyan
+} else {
+    Write-Host "  CSV Export: (no findings to export)" -ForegroundColor DarkGray
 }
-Write-Host "  CSV Export: $csvPath" -ForegroundColor Cyan
 Write-Host ""
 
 # Return findings for pipeline use

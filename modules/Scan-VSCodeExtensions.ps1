@@ -9,8 +9,13 @@ function Scan-VSCodeExtensions {
         [string]$DataDir
     )
 
-    $findings = @()
-    $extData = Get-Content "$DataDir\known_bad_extensions.json" -Raw | ConvertFrom-Json
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
+    try {
+        $extData = Get-Content "$DataDir\known_bad_extensions.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+    } catch {
+        Write-Host "  ERROR: Failed to load $DataDir\known_bad_extensions.json — $($_.Exception.Message)" -ForegroundColor Red
+        return @()
+    }
     $knownBadIds = $extData.vscode | ForEach-Object { $_.id.ToLower() }
 
     $vscodePaths = @(
@@ -36,13 +41,13 @@ function Scan-VSCodeExtensions {
             try {
                 $pkgJson = Get-Content $pkgJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json
             } catch {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "5A-VSCode"
                     Severity = "MEDIUM"
                     Item     = $extFolder.Name
                     Detail   = "Could not parse package.json"
                     Reason   = "Corrupt or obfuscated extension metadata"
-                }
+                }) | Out-Null
                 return
             }
 
@@ -56,7 +61,7 @@ function Scan-VSCodeExtensions {
                 $matchInfo = $extData.vscode | Where-Object { $_.id.ToLower() -eq $fullId }
                 $versionMatch = $version -in $matchInfo.versions
 
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "5A-VSCode"
                     Severity = "CRITICAL"
                     Item     = $fullId
@@ -66,7 +71,7 @@ function Scan-VSCodeExtensions {
                     } else {
                         "GLASSWORM WARNING: Known compromised extension installed (different version)"
                     }
-                }
+                }) | Out-Null
             }
 
             # --- 5B: Dependency Chain Analysis ---
@@ -76,13 +81,13 @@ function Scan-VSCodeExtensions {
 
             foreach ($dep in $extDeps) {
                 if ($dep.ToLower() -in $knownBadIds) {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase    = "5B-Dependencies"
                         Severity = "CRITICAL"
                         Item     = $fullId
                         Detail   = "Depends on known-bad extension: $dep"
                         Reason   = "GLASSWORM SUPPLY CHAIN: Extension pulls in compromised dependency"
-                    }
+                    }) | Out-Null
                 }
             }
 
@@ -91,13 +96,13 @@ function Scan-VSCodeExtensions {
                 $dangerousScripts = @("postinstall", "preinstall", "install", "prepare")
                 foreach ($ds in $dangerousScripts) {
                     if ($pkgJson.scripts.$ds) {
-                        $findings += [PSCustomObject]@{
+                        $findings.Add([PSCustomObject]@{
                             Phase    = "5B-Dependencies"
                             Severity = "MEDIUM"
                             Item     = $fullId
                             Detail   = "Has '$ds' script: $($pkgJson.scripts.$ds)"
                             Reason   = "Post-install scripts can execute arbitrary code during extension installation"
-                        }
+                        }) | Out-Null
                     }
                 }
             }
@@ -122,13 +127,13 @@ function Scan-VSCodeExtensions {
 
                     foreach ($cp in $credPatterns) {
                         if ($content -match $cp.P) {
-                            $findings += [PSCustomObject]@{
+                            $findings.Add([PSCustomObject]@{
                                 Phase    = "5C-SourceCode"
                                 Severity = "MEDIUM"
                                 Item     = "$fullId/$($jsFile.Name)"
                                 Detail   = $cp.R
                                 Reason   = "Extension source accesses sensitive resources"
-                            }
+                            }) | Out-Null
                         }
                     }
                 } catch { }
@@ -137,13 +142,13 @@ function Scan-VSCodeExtensions {
     }
 
     if (-not $foundAny) {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase    = "5-VSCode"
             Severity = "INFO"
             Item     = "VS Code"
             Detail   = "No VS Code extension directories found"
             Reason   = "VS Code may not be installed or has no extensions"
-        }
+        }) | Out-Null
     }
 
     return $findings

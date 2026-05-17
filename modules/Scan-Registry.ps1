@@ -12,8 +12,13 @@ function Scan-Registry {
         [string]$DataDir
     )
 
-    $findings = @()
-    $regData = Get-Content "$DataDir\suspicious_registry_values.json" -Raw | ConvertFrom-Json
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
+    try {
+        $regData = Get-Content "$DataDir\suspicious_registry_values.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+    } catch {
+        Write-Host "  ERROR: Failed to load $DataDir\suspicious_registry_values.json — $($_.Exception.Message)" -ForegroundColor Red
+        return @()
+    }
 
     Write-Host "  [1A] Scanning Run/RunOnce keys..." -ForegroundColor Cyan
 
@@ -88,13 +93,13 @@ function Scan-Registry {
                 }
             }
 
-            $findings += [PSCustomObject]@{
+            [void]$findings.Add([PSCustomObject]@{
                 Phase    = "1A-Registry"
                 Severity = $severity
                 Item     = "[$hiveShort\$keyType] $valName"
                 Detail   = "Command: $valData | Signature: $sigStatus $(if($sigDetail){" ($sigDetail)"})"
                 Reason   = $reason
-            }
+            })
         }
     }
 
@@ -115,13 +120,13 @@ function Scan-Registry {
                 $props.PSObject.Properties | Where-Object {
                     $_.Name -notin @('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider')
                 } | ForEach-Object {
-                    $findings += [PSCustomObject]@{
+                    [void]$findings.Add([PSCustomObject]@{
                         Phase    = "1B-ChromePolicy"
                         Severity = "HIGH"
                         Item     = "Force-Install Policy: $($_.Name)"
                         Detail   = "Key: $pKey | Value: $($_.Value)"
                         Reason   = "Chrome extension force-install policy detected - verify this is from enterprise GPO"
-                    }
+                    })
                 }
             }
         }
@@ -129,13 +134,13 @@ function Scan-Registry {
 
     $noPolicies = -not ($policyKeys | Where-Object { Test-Path $_ })
     if ($noPolicies) {
-        $findings += [PSCustomObject]@{
+        [void]$findings.Add([PSCustomObject]@{
             Phase    = "1B-ChromePolicy"
             Severity = "INFO"
             Item     = "Chrome Extension Policies"
             Detail   = "Checked 4 policy registry paths (HKLM/HKCU Forcelist + Allowlist) - none exist"
             Reason   = "No Chrome extension force-install policies found - clean"
-        }
+        })
     }
 
     # --- 1C: Browser Shortcut Hijacking ---
@@ -149,44 +154,49 @@ function Scan-Registry {
     $browserExes = @("chrome.exe", "msedge.exe", "brave.exe", "firefox.exe")
     $shell = New-Object -ComObject WScript.Shell
     $shortcutsScanned = 0
+    try {
+        foreach ($dir in $shortcutPaths) {
+            if (-not (Test-Path $dir)) { continue }
+            Get-ChildItem -Path $dir -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+                try {
+                    $lnk = $shell.CreateShortcut($_.FullName)
+                    $target = $lnk.TargetPath
+                    $lnkArgs = $lnk.Arguments
+                    $shortcutsScanned++
 
-    foreach ($dir in $shortcutPaths) {
-        if (-not (Test-Path $dir)) { continue }
-        Get-ChildItem -Path $dir -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            try {
-                $lnk = $shell.CreateShortcut($_.FullName)
-                $target = $lnk.TargetPath
-                $args = $lnk.Arguments
-                $shortcutsScanned++
-
-                $isBrowser = $browserExes | Where-Object { $target -like "*$_*" }
-                if ($isBrowser -and $args) {
-                    if ($args -match "--load-extension=" -or $args -match "--disable-extensions-except=") {
-                        $findings += [PSCustomObject]@{
-                            Phase    = "1C-ShortcutHijack"
-                            Severity = "CRITICAL"
-                            Item     = "Hijacked Shortcut: $($_.Name)"
-                            Detail   = "Location: $($_.FullName) | Target: $target | Args: $args"
-                            Reason   = "Browser shortcut contains extension-loading arguments - possible GlassWorm sideload"
+                    $isBrowser = $browserExes | Where-Object { $target -like "*$_*" }
+                    if ($isBrowser -and $lnkArgs) {
+                        if ($lnkArgs -match "--load-extension=" -or $lnkArgs -match "--disable-extensions-except=") {
+                            [void]$findings.Add([PSCustomObject]@{
+                                Phase    = "1C-ShortcutHijack"
+                                Severity = "CRITICAL"
+                                Item     = "Hijacked Shortcut: $($_.Name)"
+                                Detail   = "Location: $($_.FullName) | Target: $target | Args: $lnkArgs"
+                                Reason   = "Browser shortcut contains extension-loading arguments - possible GlassWorm sideload"
+                            })
                         }
                     }
-                }
-            } catch { }
+                } catch { }
+            }
         }
+    } finally {
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null
     }
 
-    $findings += [PSCustomObject]@{
-        Phase    = "1C-ShortcutHijack"
-        Severity = "INFO"
-        Item     = "Browser Shortcuts"
-        Detail   = "Scanned $shortcutsScanned shortcuts across Desktop, Start Menu, and Taskbar - no hijacking detected"
-        Reason   = "No browser shortcut manipulation found"
+    $hijackFindings = $findings | Where-Object { $_.Phase -eq "1C-ShortcutHijack" -and $_.Severity -ne "INFO" }
+    if (-not $hijackFindings -or $hijackFindings.Count -eq 0) {
+        [void]$findings.Add([PSCustomObject]@{
+            Phase    = "1C-ShortcutHijack"
+            Severity = "INFO"
+            Item     = "Browser Shortcuts"
+            Detail   = "Scanned $shortcutsScanned shortcuts across Desktop, Start Menu, and Taskbar"
+            Reason   = "No browser shortcut manipulation found"
+        })
     }
 
     # --- 1D: GlassWorm Filesystem IOCs (jucku, staging directories, persistence scripts) ---
     Write-Host "  [1D] Scanning for GlassWorm filesystem IOCs..." -ForegroundColor Cyan
 
-    $fsIOCs = $regData.glassworm_filesystem_iocs
 
     # Check for jucku directory (primary GlassWorm Chrome extension staging)
     $juckuPaths = @(
@@ -197,13 +207,13 @@ function Scan-Registry {
     foreach ($jp in $juckuPaths) {
         if (Test-Path $jp) {
             $fileCount = (Get-ChildItem $jp -Recurse -ErrorAction SilentlyContinue).Count
-            $findings += [PSCustomObject]@{
+            [void]$findings.Add([PSCustomObject]@{
                 Phase    = "1D-FilesystemIOC"
                 Severity = "CRITICAL"
                 Item     = "JUCKU DIRECTORY FOUND"
                 Detail   = "Path: $jp | Files: $fileCount | This is the GlassWorm fake Chrome extension staging directory"
                 Reason   = "GLASSWORM CONFIRMED: jucku directory is a primary indicator of active GlassWorm infection"
-            }
+            })
         }
     }
 
@@ -215,13 +225,13 @@ function Scan-Registry {
         if (Test-Path $sd) {
             $files = Get-ChildItem $sd -Recurse -ErrorAction SilentlyContinue
             $fileList = ($files | Select-Object -First 5 -ExpandProperty Name) -join ", "
-            $findings += [PSCustomObject]@{
+            [void]$findings.Add([PSCustomObject]@{
                 Phase    = "1D-FilesystemIOC"
                 Severity = "CRITICAL"
                 Item     = "GLASSWORM STAGING DIRECTORY"
                 Detail   = "Path: $sd | Files: $($files.Count) | Contents: $fileList"
                 Reason   = "GLASSWORM CONFIRMED: QtCvyfVWKH is a known GlassWorm malware staging directory"
-            }
+            })
         }
     }
 
@@ -232,13 +242,13 @@ function Scan-Registry {
         $found = Get-ChildItem "$env:LOCALAPPDATA" -Filter $ps -Recurse -ErrorAction SilentlyContinue
         if ($found) {
             foreach ($f in $found) {
-                $findings += [PSCustomObject]@{
+                [void]$findings.Add([PSCustomObject]@{
                     Phase    = "1D-FilesystemIOC"
                     Severity = "CRITICAL"
                     Item     = "GLASSWORM PERSISTENCE SCRIPT: $ps"
                     Detail   = "Path: $($f.FullName) | Size: $($f.Length) bytes | Modified: $($f.LastWriteTime)"
                     Reason   = "GLASSWORM CONFIRMED: AghzgY.ps1 is the GlassWorm Stage 3 persistence launcher"
-                }
+                })
             }
         }
     }
@@ -255,13 +265,13 @@ function Scan-Registry {
                     try {
                         $m = Get-Content $manifestPath -Raw | ConvertFrom-Json
                         if ($m.version -eq "1.95.1") {
-                            $findings += [PSCustomObject]@{
+                            [void]$findings.Add([PSCustomObject]@{
                                 Phase    = "1D-FilesystemIOC"
                                 Severity = "CRITICAL"
                                 Item     = "FAKE GOOGLE DOCS OFFLINE v1.95.1"
                                 Detail   = "Extension ID: $docsOfflineId | Version: 1.95.1 | This is a known GlassWorm trojanized version"
                                 Reason   = "GLASSWORM CONFIRMED: Google Docs Offline v1.95.1 is a known-compromised version deployed by GlassWorm"
-                            }
+                            })
                         }
                     } catch { }
                 }
@@ -272,13 +282,13 @@ function Scan-Registry {
     # Report clean if no filesystem IOCs found
     $fsFindings = $findings | Where-Object { $_.Phase -eq "1D-FilesystemIOC" }
     if (-not $fsFindings -or $fsFindings.Count -eq 0) {
-        $findings += [PSCustomObject]@{
+        [void]$findings.Add([PSCustomObject]@{
             Phase    = "1D-FilesystemIOC"
             Severity = "INFO"
             Item     = "GlassWorm Filesystem IOCs"
             Detail   = "Checked jucku directory, QtCvyfVWKH staging, AghzgY.ps1 script, Docs Offline v1.95.1 - none found"
             Reason   = "No GlassWorm filesystem artifacts detected"
-        }
+        })
     }
 
     return $findings

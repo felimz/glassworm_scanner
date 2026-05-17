@@ -12,7 +12,7 @@ function Scan-AntigravityExtensions {
         [string]$AntigravityDir
     )
 
-    $findings = @()
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
 
     # --- 4A: MCP Configuration Integrity ---
     Write-Host "  [4A] Auditing MCP configuration..." -ForegroundColor Cyan
@@ -44,25 +44,25 @@ function Scan-AntigravityExtensions {
                         if ($resolvedCmd -and (Test-Path $resolvedCmd -ErrorAction SilentlyContinue)) {
                             $sig = Get-AuthenticodeSignature -FilePath $resolvedCmd -ErrorAction SilentlyContinue
                             if ($sig -and $sig.Status -ne "Valid") {
-                                $findings += [PSCustomObject]@{
+                                $findings.Add([PSCustomObject]@{
                                     Phase    = "4A-MCP"
                                     Severity = "MEDIUM"
                                     Item     = "MCP Server: $srvName"
                                     Detail   = "Command: $command (Signature: $($sig.Status))"
                                     Reason   = "MCP server binary is not digitally signed"
-                                }
+                                }) | Out-Null
                             }
                         }
 
                         # Check for suspicious command patterns
                         if ($command -match "curl|wget|Invoke-WebRequest|Invoke-RestMethod") {
-                            $findings += [PSCustomObject]@{
+                            $findings.Add([PSCustomObject]@{
                                 Phase    = "4A-MCP"
                                 Severity = "HIGH"
                                 Item     = "MCP Server: $srvName"
                                 Detail   = "Command: $command"
                                 Reason   = "MCP server uses network download command — verify intent"
-                            }
+                            }) | Out-Null
                         }
                     }
 
@@ -71,43 +71,43 @@ function Scan-AntigravityExtensions {
                         $srvConfig.env.PSObject.Properties | ForEach-Object {
                             $envVal = $_.Value
                             if ($envVal -match "^https?://" -and $envVal -notmatch "localhost|127\.0\.0\.1|github\.com|googleapis\.com") {
-                                $findings += [PSCustomObject]@{
+                                $findings.Add([PSCustomObject]@{
                                     Phase    = "4A-MCP"
                                     Severity = "MEDIUM"
                                     Item     = "MCP Server: $srvName"
                                     Detail   = "Env var $($_.Name) contains external URL: $envVal"
                                     Reason   = "MCP server env references non-standard external URL — verify legitimacy"
-                                }
+                                }) | Out-Null
                             }
                         }
                     }
                 }
 
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "4A-MCP"
                     Severity = "INFO"
                     Item     = "MCP Config"
                     Detail   = "$($serverProps.Count) MCP server(s) configured"
                     Reason   = "MCP configuration parsed successfully"
-                }
+                }) | Out-Null
             }
         } catch {
-            $findings += [PSCustomObject]@{
+            $findings.Add([PSCustomObject]@{
                 Phase    = "4A-MCP"
                 Severity = "MEDIUM"
                 Item     = "MCP Config"
                 Detail   = "Failed to parse: $($_.Exception.Message)"
                 Reason   = "Corrupt or tampered MCP configuration"
-            }
+            }) | Out-Null
         }
     } else {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase    = "4A-MCP"
             Severity = "INFO"
             Item     = "MCP Config"
             Detail   = "No mcp_config.json found"
             Reason   = "No MCP servers configured"
-        }
+        }) | Out-Null
     }
 
     # --- 4B: Implicit Data Store Analysis ---
@@ -123,25 +123,25 @@ function Scan-AntigravityExtensions {
         foreach ($pb in $pbFiles) {
             # Flag files much larger than average (>5x) — could contain injected payloads
             if ($avgSize -gt 0 -and $pb.Length -gt ($avgSize * 5)) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "4B-ImplicitData"
                     Severity = "MEDIUM"
                     Item     = $pb.Name
                     Detail   = "Size: $($pb.Length) bytes (avg: $([math]::Round($avgSize)) bytes, $([math]::Round($pb.Length / $avgSize, 1))x average)"
                     Reason   = "Anomalously large protobuf file — may warrant inspection"
-                }
+                }) | Out-Null
             }
 
             # Flag files modified at unusual hours (midnight-5am)
             $hour = $pb.LastWriteTime.Hour
             if ($hour -ge 0 -and $hour -lt 5) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "4B-ImplicitData"
                     Severity = "INFO"
                     Item     = $pb.Name
                     Detail   = "Last modified: $($pb.LastWriteTime)"
                     Reason   = "File modified during unusual hours (midnight-5am)"
-                }
+                }) | Out-Null
             }
         }
 
@@ -149,22 +149,22 @@ function Scan-AntigravityExtensions {
         $nonPbFiles = Get-ChildItem -Path $implicitDir -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -ne ".pb" }
         foreach ($npf in $nonPbFiles) {
-            $findings += [PSCustomObject]@{
+            $findings.Add([PSCustomObject]@{
                 Phase    = "4B-ImplicitData"
                 Severity = "HIGH"
                 Item     = $npf.Name
                 Detail   = "Unexpected file type in implicit dir: $($npf.Extension)"
                 Reason   = "Only .pb files expected — could be injected payload"
-            }
+            }) | Out-Null
         }
 
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase    = "4B-ImplicitData"
             Severity = "INFO"
             Item     = "Implicit Store"
             Detail   = "$($pbFiles.Count) protobuf files, avg $([math]::Round($avgSize)) bytes"
             Reason   = "Data store enumerated"
-        }
+        }) | Out-Null
     }
 
     # --- 4C: Antigravity Chrome Extension Verification ---
@@ -185,26 +185,26 @@ function Scan-AntigravityExtensions {
 
                 # Verify name
                 if ($manifest.name -ne "Antigravity Browser Extension") {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase    = "4C-AntigravityExt"
                         Severity = "CRITICAL"
                         Item     = "Antigravity Extension"
                         Detail   = "Name mismatch: expected 'Antigravity Browser Extension', got '$($manifest.name)'"
                         Reason   = "Extension identity has been tampered with"
-                    }
+                    }) | Out-Null
                 }
 
                 # Verify permissions haven't been expanded
                 $actualPerms = @($manifest.permissions)
                 $unexpectedPerms = $actualPerms | Where-Object { $_ -notin $expectedPerms }
                 if ($unexpectedPerms) {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase    = "4C-AntigravityExt"
                         Severity = "HIGH"
                         Item     = "Antigravity Extension"
                         Detail   = "Unexpected permissions: $($unexpectedPerms -join ', ')"
                         Reason   = "Antigravity extension has permissions beyond expected set"
-                    }
+                    }) | Out-Null
                 }
 
                 # Check for duplicate Antigravity extensions with different IDs
@@ -220,13 +220,13 @@ function Scan-AntigravityExtensions {
                                 try {
                                     $om = Get-Content $otherManifest.FullName -Raw | ConvertFrom-Json
                                     if ($om.name -match "Antigravity") {
-                                        $findings += [PSCustomObject]@{
+                                        $findings.Add([PSCustomObject]@{
                                             Phase    = "4C-AntigravityExt"
                                             Severity = "CRITICAL"
                                             Item     = "Duplicate Antigravity"
                                             Detail   = "Second extension with name '$($om.name)' found with ID: $($_.Name)"
                                             Reason   = "POSSIBLE SHADOW EXTENSION — Antigravity is being impersonated"
-                                        }
+                                        }) | Out-Null
                                     }
                                 } catch { }
                             }
@@ -234,23 +234,23 @@ function Scan-AntigravityExtensions {
                     }
                 }
 
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "4C-AntigravityExt"
                     Severity = "INFO"
                     Item     = "Antigravity Extension"
                     Detail   = "Version: $($manifest.version) | Permissions: $($actualPerms -join ', ')"
                     Reason   = "Extension verified"
-                }
+                }) | Out-Null
             }
         }
     } else {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase    = "4C-AntigravityExt"
             Severity = "INFO"
             Item     = "Antigravity Extension"
             Detail   = "Extension directory not found at expected path"
             Reason   = "Antigravity Chrome extension may not be installed"
-        }
+        }) | Out-Null
     }
 
     # --- 4D: Brain/Knowledge Directory Audit ---
@@ -266,13 +266,13 @@ function Scan-AntigravityExtensions {
         if (-not (Test-Path $scanDir)) { continue }
         Get-ChildItem -Path $scanDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
             if ($_.Extension -in $dangerousExtensions) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "4D-BrainKnowledge"
                     Severity = "HIGH"
                     Item     = $_.FullName
                     Detail   = "Executable file in data directory: $($_.Name) ($($_.Length) bytes)"
                     Reason   = "Executable files should NOT be present in brain/knowledge stores"
-                }
+                }) | Out-Null
             }
         }
     }

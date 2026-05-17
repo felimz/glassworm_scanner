@@ -9,19 +9,24 @@ function Scan-ChromeExtensions {
         [string]$DataDir
     )
 
-    $findings = @()
-    $extData = Get-Content "$DataDir\known_bad_extensions.json" -Raw | ConvertFrom-Json
-    $c2Data  = Get-Content "$DataDir\known_c2_ips.json" -Raw | ConvertFrom-Json
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
+    try {
+        $extData = Get-Content "$DataDir\known_bad_extensions.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+        $c2Data  = Get-Content "$DataDir\known_c2_ips.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+    } catch {
+        Write-Host "  ERROR: Failed to load data files from $DataDir — $($_.Exception.Message)" -ForegroundColor Red
+        return @()
+    }
 
     $chromeBase = "$env:LOCALAPPDATA\Google\Chrome\User Data"
     if (-not (Test-Path $chromeBase)) {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase    = "3-Chrome"
             Severity = "INFO"
             Item     = "Chrome Installation"
             Detail   = "Chrome user data directory not found at $chromeBase"
             Reason   = "Chrome may not be installed"
-        }
+        }) | Out-Null
         return $findings
     }
 
@@ -65,13 +70,13 @@ function Scan-ChromeExtensions {
             try {
                 $manifest = Get-Content $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
             } catch {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "3A-Manifest"
                     Severity = "MEDIUM"
                     Item     = "Unknown Extension ($extensionId)"
                     Detail   = "Profile: $profileName | Failed to parse manifest.json at $manifestPath"
                     Reason   = "Corrupt or obfuscated manifest"
-                }
+                }) | Out-Null
                 return
             }
 
@@ -105,13 +110,13 @@ function Scan-ChromeExtensions {
 
             # CRITICAL: Fake Google Docs Offline detection
             if ($extName -match "Google Docs Offline" -and $extensionId -ne $legitimateDocsOfflineId) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "3A-Manifest"
                     Severity = "CRITICAL"
                     Item     = "FAKE: $resolvedName ($extensionId)"
                     Detail   = "Profile: $profileName | Version: $($manifest.version) | Legitimate ID is $legitimateDocsOfflineId but this extension uses $extensionId | Permissions: $permDisplay"
                     Reason   = "GLASSWORM INDICATOR: Fake Google Docs Offline extension detected"
-                }
+                }) | Out-Null
             }
 
             # HIGH: Dangerous permission combos (surveillance kit)
@@ -126,34 +131,34 @@ function Scan-ChromeExtensions {
 
             if ($hasCookies -and $hasWebRequest -and $hasTabs -and $hasAllUrls) {
                 if ($extensionId -notin $knownGoodExtIds) {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase    = "3A-Manifest"
                         Severity = "HIGH"
                         Item     = "$resolvedName ($extensionId)"
                         Detail   = "Profile: $profileName | Version: $($manifest.version) | Dangerous combo: cookies + webRequest + tabs + <all_urls> | Full permissions: $permDisplay"
                         Reason   = "Surveillance-capable permission set - can intercept all traffic and steal sessions"
-                    }
+                    }) | Out-Null
                 }
             }
 
             if ($hasDebugger) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "3A-Manifest"
                     Severity = "HIGH"
                     Item     = "$resolvedName ($extensionId)"
                     Detail   = "Profile: $profileName | Version: $($manifest.version) | Has 'debugger' permission | Full permissions: $permDisplay"
                     Reason   = "Can attach to any tab and intercept all network traffic"
-                }
+                }) | Out-Null
             }
 
             if ($hasNativeMsg -and $extensionId -notin $knownGoodExtIds) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "3A-Manifest"
                     Severity = "MEDIUM"
                     Item     = "$resolvedName ($extensionId)"
                     Detail   = "Profile: $profileName | Version: $($manifest.version) | Has 'nativeMessaging' permission - can launch host binaries | Full permissions: $permDisplay"
                     Reason   = "Can launch host processes - verify this is expected"
-                }
+                }) | Out-Null
             }
 
             # --- 3C: Content Scanning (JS files) ---
@@ -166,45 +171,45 @@ function Scan-ChromeExtensions {
                     # Check for C2 IPs
                     foreach ($c2 in ($c2Data.c2_servers + $c2Data.exfiltration + $c2Data.phishing)) {
                         if ($content -match [regex]::Escape($c2.ip)) {
-                            $findings += [PSCustomObject]@{
+                            $findings.Add([PSCustomObject]@{
                                 Phase    = "3C-Content"
                                 Severity = "CRITICAL"
                                 Item     = "$resolvedName ($extensionId)"
                                 Detail   = "Profile: $profileName | File: $($jsFile.Name) | Contains known C2 IP: $($c2.ip) ($($c2.type): $($c2.note))"
                                 Reason   = "GLASSWORM INDICATOR: Known C2/exfil IP found in extension source"
-                            }
+                            }) | Out-Null
                         }
                     }
 
                     # Check for Solana RPC endpoints
                     foreach ($rpc in $c2Data.solana.rpc_domains) {
                         if ($content -match [regex]::Escape($rpc)) {
-                            $findings += [PSCustomObject]@{
+                            $findings.Add([PSCustomObject]@{
                                 Phase    = "3C-Content"
                                 Severity = "CRITICAL"
                                 Item     = "$resolvedName ($extensionId)"
                                 Detail   = "Profile: $profileName | File: $($jsFile.Name) | References Solana RPC endpoint: $rpc"
                                 Reason   = "GLASSWORM INDICATOR: Solana blockchain C2 resolution pattern"
-                            }
+                            }) | Out-Null
                         }
                     }
 
                     # Check for Solana wallet address
                     if ($content -match [regex]::Escape($c2Data.solana.wallet)) {
-                        $findings += [PSCustomObject]@{
+                        $findings.Add([PSCustomObject]@{
                             Phase    = "3C-Content"
                             Severity = "CRITICAL"
                             Item     = "$resolvedName ($extensionId)"
                             Detail   = "Profile: $profileName | File: $($jsFile.Name) | Contains GlassWorm attacker wallet: $($c2Data.solana.wallet)"
                             Reason   = "GLASSWORM CONFIRMED: Known attacker wallet address in extension"
-                        }
+                        }) | Out-Null
                     }
 
                     # Check for suspicious patterns
                     $suspPatterns = @(
                         @{ Pattern = "document\.cookie"; Reason = "Cookie access via DOM" },
                         @{ Pattern = "chrome\.cookies\.getAll"; Reason = "Bulk cookie theft API" },
-                        @{ Pattern = "addEventListener\s*\(\s*['""]key(down|press|up)['""]"; Reason = "Keylogger pattern (keydown/keypress/keyup listener)" },
+                        @{ Pattern = "addEventListener\s*\(\s*['\`"]key(down|press|up)['\`"]"; Reason = "Keylogger pattern (keydown/keypress/keyup listener)" },
                         @{ Pattern = "chrome\.debugger\.attach"; Reason = "Debugger attachment API" }
                     )
 
@@ -212,13 +217,13 @@ function Scan-ChromeExtensions {
                         if ($content -match $sp.Pattern) {
                             # Only flag if not a well-known extension
                             if ($extensionId -notin $knownGoodExtIds) {
-                                $findings += [PSCustomObject]@{
+                                $findings.Add([PSCustomObject]@{
                                     Phase    = "3C-Content"
                                     Severity = "MEDIUM"
                                     Item     = "$resolvedName ($extensionId)"
                                     Detail   = "Profile: $profileName | File: $($jsFile.Name) | Pattern: $($sp.Reason)"
                                     Reason   = "Suspicious code pattern - verify legitimacy"
-                                }
+                                }) | Out-Null
                             }
                         }
                     }
@@ -228,13 +233,13 @@ function Scan-ChromeExtensions {
             # Baseline entry for clean extensions
             $extFindings = $findings | Where-Object { $_.Item -match [regex]::Escape($extensionId) -and $_.Severity -notin @("INFO") }
             if ($extFindings.Count -eq 0) {
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase    = "3-Chrome"
                     Severity = "INFO"
                     Item     = "$resolvedName ($extensionId)"
                     Detail   = "Profile: $profileName | Version: $($manifest.version) | Permissions: $permDisplay"
                     Reason   = "No suspicious indicators detected"
-                }
+                }) | Out-Null
             }
         }
     }

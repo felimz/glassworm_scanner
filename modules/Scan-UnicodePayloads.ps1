@@ -1,7 +1,8 @@
 function Scan-UnicodePayloads {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string[]]$ScanPaths, [int]$MaxFileSizeKB = 2048)
-    $findings = @(); $totalScanned = 0; $totalInvis = 0
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
+    $totalScanned = 0; $totalInvis = 0
     $ranges = @(
         @{S=0xFE00;E=0xFE0F;C="VarSel";D="Variation Selectors (GlassWorm primary)"},
         @{S=0xE0100;E=0xE01EF;C="VarSelS";D="Variation Selectors Supplement"},
@@ -47,10 +48,10 @@ function Scan-UnicodePayloads {
                 $reason = if ($hasVS) {"GLASSWORM SIGNATURE: Variation selectors — primary code hiding"} `
                     elseif ($hasPUA) {"GLASSWORM INDICATOR: PUA characters — hidden executable code"} `
                     else {"Suspicious invisible characters — review needed"}
-                $findings += [PSCustomObject]@{Phase="6-Unicode";Severity=$sev;Item=$f.FullName;Detail="$($hits.Count) invisible chars | $($catSum -join ', ')";Reason=$reason}
+                $findings.Add([PSCustomObject]@{Phase="6-Unicode";Severity=$sev;Item=$f.FullName;Detail="$($hits.Count) invisible chars | $($catSum -join ', ')";Reason=$reason}) | Out-Null
             }
         }
     }
-    $findings += [PSCustomObject]@{Phase="6-Unicode";Severity="INFO";Item="Summary";Detail="$totalScanned files, $totalInvis chars";Reason="Unicode scan complete"}
+    $findings.Add([PSCustomObject]@{Phase="6-Unicode";Severity="INFO";Item="Summary";Detail="$totalScanned files, $totalInvis chars";Reason="Unicode scan complete"}) | Out-Null
     return $findings
 }

@@ -6,8 +6,13 @@ function Scan-NetworkIOCs {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$DataDir)
 
-    $findings = @()
-    $c2Data = Get-Content "$DataDir\known_c2_ips.json" -Raw | ConvertFrom-Json
+    $findings = [System.Collections.Generic.List[PSObject]]::new()
+    try {
+        $c2Data = Get-Content "$DataDir\known_c2_ips.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+    } catch {
+        Write-Host "  ERROR: Failed to load $DataDir\known_c2_ips.json — $($_.Exception.Message)" -ForegroundColor Red
+        return @()
+    }
     $allIPs = @()
     $c2Data.c2_servers | ForEach-Object { $allIPs += $_.ip }
     $c2Data.exfiltration | ForEach-Object { $allIPs += $_.ip }
@@ -21,12 +26,12 @@ function Scan-NetworkIOCs {
             $remoteIP = $conn.RemoteAddress
             if ($remoteIP -in $allIPs) {
                 $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
-                $findings += [PSCustomObject]@{
+                $findings.Add([PSCustomObject]@{
                     Phase="7A-ActiveConn"; Severity="CRITICAL"
                     Item="$remoteIP`:$($conn.RemotePort)"
                     Detail="Process: $($proc.ProcessName) (PID $($conn.OwningProcess)) | State: $($conn.State)"
                     Reason="GLASSWORM ACTIVE: Connection to known C2/exfil IP"
-                }
+                }) | Out-Null
             }
         }
 
@@ -44,12 +49,12 @@ function Scan-NetworkIOCs {
             if ($proc -and $proc.Path -and $proc.Path -match "AppData|Temp") {
                 $isKnownGood = $knownGoodListeners | Where-Object { $proc.ProcessName -match $_ }
                 if (-not $isKnownGood) {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase="7A-ActiveConn"; Severity="HIGH"
                         Item="Listening :$($l.LocalPort)"
                         Detail="Process: $($proc.ProcessName) at $($proc.Path)"
                         Reason="User-space process listening on port - possible SOCKS proxy or RAT"
-                    }
+                    }) | Out-Null
                 }
             }
         }
@@ -71,27 +76,27 @@ function Scan-NetworkIOCs {
             $isKnownNode = $knownNodePaths | Where-Object { $nc.Proc.Path -match $_ }
             if ($isKnownNode) { continue }
 
-            $findings += [PSCustomObject]@{
+            $findings.Add([PSCustomObject]@{
                 Phase="7A-ActiveConn"; Severity="HIGH"
                 Item="node.exe -> $($remoteAddr):$($nc.Conn.RemotePort)"
                 Detail="Path: $($nc.Proc.Path) | Remote: $($remoteAddr):$($nc.Conn.RemotePort)"
                 Reason="Node.js from AppData making outbound connection - possible ZOMBI RAT"
-            }
+            }) | Out-Null
         }
     } catch {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase="7A-ActiveConn"; Severity="INFO"; Item="NetTCP"
             Detail="Could not query connections: $($_.Exception.Message)"
             Reason="May require elevation"
-        }
+        }) | Out-Null
     }
 
     if (-not ($findings | Where-Object { $_.Phase -eq "7A-ActiveConn" -and $_.Severity -ne "INFO" })) {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase="7A-ActiveConn"; Severity="INFO"; Item="Active Connections"
             Detail="No connections to known C2 IPs detected"
             Reason="Network connections clean"
-        }
+        }) | Out-Null
     }
 
     # --- 7B: DNS Cache ---
@@ -102,29 +107,29 @@ function Scan-NetworkIOCs {
             # Check for Solana RPC domains
             foreach ($rpc in $c2Data.solana.rpc_domains) {
                 if ($entry.Entry -match [regex]::Escape($rpc)) {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase="7B-DNS"; Severity="HIGH"
                         Item=$entry.Entry; Detail="Type: $($entry.Type) | Data: $($entry.Data)"
                         Reason="Solana RPC domain in DNS cache — possible blockchain C2 resolution"
-                    }
+                    }) | Out-Null
                 }
             }
             # Check for C2 IPs in DNS resolution
             foreach ($ip in $allIPs) {
                 if ($entry.Data -eq $ip) {
-                    $findings += [PSCustomObject]@{
+                    $findings.Add([PSCustomObject]@{
                         Phase="7B-DNS"; Severity="CRITICAL"
                         Item=$entry.Entry; Detail="Resolved to known C2 IP: $ip"
                         Reason="GLASSWORM: DNS cache contains resolution to known C2 IP"
-                    }
+                    }) | Out-Null
                 }
             }
         }
     } catch {
-        $findings += [PSCustomObject]@{
+        $findings.Add([PSCustomObject]@{
             Phase="7B-DNS"; Severity="INFO"; Item="DNS Cache"
             Detail="Could not query DNS cache"; Reason="Non-critical"
-        }
+        }) | Out-Null
     }
 
     return $findings

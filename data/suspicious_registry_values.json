@@ -40,7 +40,20 @@
     "Spotify",
     "GoogleDriveFS",
     "iTunesHelper",
-    "ExpressVPN"
+    "ExpressVPN",
+    "RealTimeIsUniversal",
+    "RTHDVCPL",
+    "NvBackend",
+    "NvTmMon",
+    "SunJavaUpdateSched"
+  ],
+  "known_good_value_patterns": [
+    "^MicrosoftCopilotAutoLaunch_",
+    "^msedge_cleanup_",
+    "^Delete Cached.*Update Binary$",
+    "^OneDrive_",
+    "^Microsoft Teams_",
+    "^MSEdge_"
   ],
   "glassworm_filesystem_iocs": {
     "jucku_directory": {

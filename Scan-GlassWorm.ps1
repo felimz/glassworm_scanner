@@ -175,10 +175,12 @@ Write-Host "  ======================================================" -Foregroun
 $critical = @($allFindings | Where-Object { $_.Severity -eq "CRITICAL" })
 $high     = @($allFindings | Where-Object { $_.Severity -eq "HIGH" })
 $medium   = @($allFindings | Where-Object { $_.Severity -eq "MEDIUM" })
+$low      = @($allFindings | Where-Object { $_.Severity -eq "LOW" })
 $info     = @($allFindings | Where-Object { $_.Severity -eq "INFO" })
 
 $statusColor = "Green"
 $statusText  = "CLEAN - No GlassWorm indicators detected"
+if ($low.Count -gt 0)    { $statusColor = "Green"; $statusText = "CLEAN - Minor items noted for reference" }
 if ($medium.Count -gt 0) { $statusColor = "Yellow"; $statusText = "REVIEW - Some items need manual verification" }
 if ($high.Count -gt 0)   { $statusColor = "DarkYellow"; $statusText = "SUSPICIOUS - High-severity indicators found" }
 if ($critical.Count -gt 0) { $statusColor = "Red"; $statusText = "COMPROMISED - Critical GlassWorm indicators detected!" }
@@ -189,13 +191,14 @@ Write-Host ""
 Write-Host "  CRITICAL : $($critical.Count)" -ForegroundColor $(if ($critical.Count) {"Red"} else {"DarkGray"})
 Write-Host "  HIGH     : $($high.Count)" -ForegroundColor $(if ($high.Count) {"DarkYellow"} else {"DarkGray"})
 Write-Host "  MEDIUM   : $($medium.Count)" -ForegroundColor $(if ($medium.Count) {"Yellow"} else {"DarkGray"})
+Write-Host "  LOW      : $($low.Count)" -ForegroundColor $(if ($low.Count) {"Cyan"} else {"DarkGray"})
 Write-Host "  INFO     : $($info.Count)" -ForegroundColor DarkGray
 
 # Show non-INFO findings
-if ($critical.Count + $high.Count + $medium.Count -gt 0) {
+if ($critical.Count + $high.Count + $medium.Count + $low.Count -gt 0) {
     Write-Host "`n  -- Findings Detail --" -ForegroundColor White
-    foreach ($f in ($critical + $high + $medium)) {
-        $sColor = switch ($f.Severity) { "CRITICAL" {"Red"} "HIGH" {"DarkYellow"} "MEDIUM" {"Yellow"} }
+    foreach ($f in ($critical + $high + $medium + $low)) {
+        $sColor = switch ($f.Severity) { "CRITICAL" {"Red"} "HIGH" {"DarkYellow"} "MEDIUM" {"Yellow"} "LOW" {"Cyan"} }
         Write-Host ""
         Write-Host "  $($f.Severity) | $($f.Phase)" -ForegroundColor $sColor
         Write-Host "    Item:   $($f.Item)" -ForegroundColor White
@@ -216,7 +219,7 @@ if ($HTMLReport) {
 
     $rows = $allFindings | ForEach-Object {
         $bgColor = switch ($_.Severity) {
-            "CRITICAL" { "#ff4444" } "HIGH" { "#ff8800" } "MEDIUM" { "#ffcc00" } default { "#333" }
+            "CRITICAL" { "#ff4444" } "HIGH" { "#ff8800" } "MEDIUM" { "#ffcc00" } "LOW" { "#4488ff" } default { "#333" }
         }
         $textColor = if ($_.Severity -in @("MEDIUM")) { "#000" } else { "#fff" }
         "<tr style='background:$bgColor;color:$textColor'><td>$(ConvertTo-EscapedHtml $_.Severity)</td><td>$(ConvertTo-EscapedHtml $_.Phase)</td><td>$(ConvertTo-EscapedHtml $_.Item)</td><td>$(ConvertTo-EscapedHtml $_.Detail)</td><td>$(ConvertTo-EscapedHtml $_.Reason)</td></tr>"
@@ -244,7 +247,7 @@ footer{margin-top:2em;padding-top:1em;border-top:1px solid #333;color:#666;font-
 <h1>GlassWorm Backdoor Scan Report</h1>
 <p class="meta">Host: <strong>$env:COMPUTERNAME</strong> | User: <strong>$env:USERNAME</strong> | Admin: <strong>$adminNote</strong> | Time: <strong>$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</strong></p>
 <h2 class="status-$(if($critical.Count){'bad'}elseif($high.Count){'warn'}else{'clean'})">$statusText</h2>
-<p class="counts"><span>CRITICAL: $($critical.Count)</span><span>HIGH: $($high.Count)</span><span>MEDIUM: $($medium.Count)</span><span>INFO: $($info.Count)</span></p>
+<p class="counts"><span>CRITICAL: $($critical.Count)</span><span>HIGH: $($high.Count)</span><span>MEDIUM: $($medium.Count)</span><span>LOW: $($low.Count)</span><span>INFO: $($info.Count)</span></p>
 <table><tr><th>Severity</th><th>Phase</th><th>Item</th><th>Detail</th><th>Reason</th></tr>
 $($rows -join "`n")
 </table>

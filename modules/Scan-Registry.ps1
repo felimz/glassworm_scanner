@@ -67,6 +67,11 @@ function Scan-Registry {
                 $severity = "INFO"
                 $reason = "Known-good application"
             }
+            # Check if matches known-good pattern (e.g., MicrosoftCopilotAutoLaunch_*, msedge_cleanup_*)
+            elseif ($regData.known_good_value_patterns -and ($regData.known_good_value_patterns | Where-Object { $valName -match $_ })) {
+                $severity = "INFO"
+                $reason = "Matches known-good pattern: $($regData.known_good_value_patterns | Where-Object { $valName -match $_ } | Select-Object -First 1)"
+            }
             # Unknown entry - flag for review
             else {
                 $severity = "MEDIUM"

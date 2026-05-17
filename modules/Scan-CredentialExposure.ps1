@@ -33,10 +33,13 @@ function Scan-CredentialExposure {
             $severity = "INFO"
             $reason = "Credential file present — potential GlassWorm target"
 
-            # Flag if recently modified (could indicate harvesting)
-            if ($daysSinceModified -lt 7) {
+            # Flag if very recently modified (could indicate active harvesting)
+            if ($daysSinceModified -lt 1) {
                 $severity = "MEDIUM"
-                $reason = "Credential file modified in last 7 days — verify no unauthorized access"
+                $reason = "Credential file modified in last 24 hours — verify this was your activity"
+            } elseif ($daysSinceModified -lt 7) {
+                $severity = "INFO"
+                $reason = "Credential file recently modified ($daysSinceModified days ago) — likely normal activity"
             }
 
             $findings.Add([PSCustomObject]@{

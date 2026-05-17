@@ -32,9 +32,22 @@ function Scan-ScheduledTasks {
         return $findings
     }
 
+    # Known-good system task path prefixes — tasks under these paths with empty Author are expected
+    $systemTaskPrefixes = @(
+        '\Microsoft\Windows\',
+        '\Microsoft\Office\',
+        '\MicrosoftEdgeUpdate',
+        '\Microsoft\Windows Defender\',
+        '\SoftLanding\',
+        '\Microsoft\EdgeUpdate\',
+        '\Microsoft\.NET\',
+        '\Microsoft\VisualStudio\'
+    )
+
     foreach ($task in $tasks) {
         $taskName = $task.TaskName
         $taskPath = $task.TaskPath
+        $fullTaskPath = "$taskPath$taskName"
         $severity = $null
         $reasons = @()
 
@@ -75,10 +88,20 @@ function Scan-ScheduledTasks {
                 }
             }
 
-            # Check author — empty or null author is suspicious
+            # Check author — empty/null author is suspicious only for non-system tasks
             if ([string]::IsNullOrEmpty($task.Author)) {
-                $severity = if ($severity) { $severity } else { "MEDIUM" }
-                $reasons += "Task has empty Author field"
+                $isSystemTask = $systemTaskPrefixes | Where-Object { $fullTaskPath -like "$_*" }
+                if ($isSystemTask) {
+                    # System tasks commonly have no Author — only flag if other indicators are present
+                    if ($severity) {
+                        $reasons += "Task has empty Author field (system task path)"
+                    }
+                    # Don't escalate severity for system tasks with empty Author alone
+                } else {
+                    # Non-system task with no Author — genuinely suspicious
+                    $severity = if ($severity) { $severity } else { "MEDIUM" }
+                    $reasons += "Task has empty Author field (non-system path)"
+                }
             }
         }
 
@@ -86,7 +109,7 @@ function Scan-ScheduledTasks {
             $findings.Add([PSCustomObject]@{
                 Phase    = "2A-ScheduledTasks"
                 Severity = $severity
-                Item     = "$taskPath$taskName"
+                Item     = $fullTaskPath
                 Detail   = ($actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join "; "
                 Reason   = $reasons -join " | "
             }) | Out-Null

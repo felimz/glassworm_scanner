@@ -1,0 +1,8 @@
+# GlassWorm Scanner reports (contain sensitive system info)
+reports/*.csv
+reports/*.html
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

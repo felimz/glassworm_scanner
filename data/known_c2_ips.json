@@ -1,0 +1,26 @@
+{
+  "c2_servers": [
+    { "ip": "45.32.150.251", "type": "C2", "note": "Primary C2 server" },
+    { "ip": "217.69.3.218", "type": "C2", "note": "Secondary C2 server" },
+    { "ip": "199.247.10.166", "type": "C2", "note": "Tertiary C2 server" }
+  ],
+  "exfiltration": [
+    { "ip": "140.82.52.31", "endpoint": "/wall", "type": "exfil", "note": "Data exfiltration endpoint" },
+    { "ip": "217.69.3.152", "endpoint": "/wall", "type": "exfil", "note": "Data exfiltration endpoint" }
+  ],
+  "phishing": [
+    { "ip": "45.150.34.158", "type": "wallet_phish", "note": "Crypto wallet phishing" }
+  ],
+  "solana": {
+    "wallet": "28PKnu7RzizxBzFPoLp69HLXp9bJL3JFtT2s5QzHsEA2",
+    "rpc_domains": [
+      "api.mainnet-beta.solana.com",
+      "solana-mainnet.g.alchemy.com",
+      "rpc.ankr.com/solana"
+    ]
+  },
+  "google_calendar": {
+    "url": "https://calendar.app.google/M2ZCvM8ULL56PD1d6",
+    "organizer": "uhjdclolkdn@gmail.com"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "known_bad_value_names": [
+    "UpdateLedger"
+  ],
+  "suspicious_patterns": [
+    "(?i)ledger",
+    "(?i)trezor",
+    "(?i)wallet.*update",
+    "(?i)sync.*node",
+    "(?i)node.*sync",
+    "(?i)zombi"
+  ],
+  "suspicious_path_patterns": [
+    "\\\\AppData\\\\.*\\.exe$",
+    "\\\\Temp\\\\.*\\.exe$",
+    "powershell.*-[eE]nc",
+    "powershell.*-[eE] ",
+    "node\\.exe.*--eval",
+    "rundll32.*AppData",
+    "wscript.*AppData",
+    "cscript.*AppData",
+    "mshta.*http"
+  ],
+  "known_good_value_names": [
+    "OneDrive",
+    "Discord",
+    "SecurityHealth",
+    "Logitech Download Assistant",
+    "MicrosoftCopilotAutoLaunch_8211D4449EF84E79B304C885E1579CD9",
+    "Steam",
+    "Spotify",
+    "GoogleDriveFS",
+    "iTunesHelper"
+  ]
+}
